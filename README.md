@@ -6,7 +6,7 @@ Este repositório apresenta uma jornada prática para análise, modelagem e cont
 
 Demonstrar o fluxo completo de um projeto de ciência de dados e automação:
 
-1. Baixar um dataset
+1. Baixar um dataset✅
 2. Explorar e entender o conteúdo
 3. Importar os dados para o ambiente de trabalho
 4. Tratar e relacionar os dados com variáveis
