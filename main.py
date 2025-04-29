@@ -137,10 +137,6 @@ def comparar_pade_vs_padding(k, tau, theta, tempo_max=4000):
     plt.show()
 
 
-import matplotlib.pyplot as plt
-import control as ctrl
-import numpy as np
-
 def comparar_pade_ordens(k, tau, theta, tempo_max=4000):
     T = np.linspace(0, tempo_max, 1000)
     G_base = ctrl.tf([k], [tau, 1])
@@ -179,7 +175,6 @@ def comparar_modelo_saida(tempo, saida_real, G, theta):
     # criar vetor deslocado
     y_sim_atrasado = np.concatenate((np.zeros(atraso_amostras), y_sim))[:len(tempo)]
 
-    
     # plocar gráfico
     plt.figure(figsize=(10,5))
     plt.plot(tempo, saida_real / np.max(saida_real), label='Saída Real (normalizada)')
@@ -195,7 +190,6 @@ def comparar_modelo_saida(tempo, saida_real, G, theta):
     # erro
     erro = np.mean(np.abs((saida_real / np.max(saida_real)) - y_sim_atrasado))
     print(f"\n Erro médio entre o modelo e a saída real: {erro:.4f}")
-
 
 # Sintonizar PID 
 # CHR com Sobressinal e Cohen-Coon
