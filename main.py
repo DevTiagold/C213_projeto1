@@ -1,7 +1,7 @@
 from scipy.io import loadmat, whosmat
 import numpy as np
 import matplotlib.pyplot as plt
-#from matplotlib.widgets import Slider, Button # usar quando for implementar interface
+#from matplotlib.widgets import Slider, Button -->  usar quando for implementar interface
 import control as ctrl
 
 
@@ -12,7 +12,7 @@ def load_dados(filename):
     Tempo, Entrada, Saida, QuantidadeFisica, Unidades = data
     return Tempo[0], Entrada[0], Saida[0], QuantidadeFisica[0], Unidades[0]
 
-def plot_entrada_saida_aprimorada(tempo, entrada, saida):
+def plot_entrada_saida(tempo, entrada, saida):
     plt.figure(figsize=(10, 5))
     plt.plot(tempo, entrada, label='Entrada')
     plt.plot(tempo, saida, label='Saída', linestyle='--')
@@ -21,12 +21,12 @@ def plot_entrada_saida_aprimorada(tempo, entrada, saida):
     plt.ylabel('Amplitude')
     plt.grid(True)
     plt.legend()
-    plt.xlim(0, 30000)  # mais q o tempo disponível do dataset
+    plt.xlim(0, 30000) 
     plt.tight_layout()
     plt.show()
 
 def identificar_planta_smith(tempo, entrada, saida):
-    # Patamar inicial e final
+    
     entrada_inicial = np.min(entrada)
     entrada_final = np.max(entrada)
     saida_inicial = np.min(saida)
@@ -147,7 +147,7 @@ def comparar_pade_ordens(k, tau, theta, tempo_max=4000):
     G_pade5 = ctrl.series(G_base, ctrl.tf(num5, den5))
     t5, y5 = ctrl.step_response(G_pade5, T)
 
-    # Padé ordem 20
+    # Padé ordem 20 --> ideal
     num20, den20 = ctrl.pade(theta, 20)
     G_pade20 = ctrl.series(G_base, ctrl.tf(num20, den20))
     t20, y20 = ctrl.step_response(G_pade20, T)
@@ -214,7 +214,7 @@ def comparar_modelo_saida(tempo, saida_real, G, theta):
 
 
 # Sintonizar PID 
-# CHR com Sobressinal e Cohen-Coon
+# CHR com Sobrevalor e Cohen-Coon
 
 def sintonia_pid_chr_sobressinal(k, tau, theta):
     Kp = 0.6 * (tau / (k * theta))
@@ -256,42 +256,71 @@ def avaliar_desempenho(tempo, resposta):
     print(f"Tempo de acomodação (±2%): {tempo_acomodacao:.2f} s")
 
 
-# Para executar
+# Execução da main
 if __name__ == "__main__":
-    # Carregar dados
+
+    # ETAPA 1 – Carregar e visualizar os dados
     Tempo, Entrada, Saida, QuantidadeFisica, Unidades = load_dados('Dataset_Grupo3.mat')
+    Tempo = Tempo.astype(float)
+    plot_entrada_saida(Tempo, Entrada, Saida)
 
-    Tempo = Tempo.astype(float)  
-
-    plot_entrada_saida_aprimorada(Tempo, Entrada, Saida)
-    
-    # Identificação
+    # ETAPA 2 – Identificação da planta
     k, tau, theta = identificar_planta_smith(Tempo, Entrada, Saida)
     G, theta = obter_funcao_transferencia(k, tau, theta)
 
-    # Comparação 
+    k_sund, tau_sund, theta_sund = identificar_planta_sundaresan(Tempo, Entrada, Saida)
+    G_sund = obter_funcao_transferencia_pade(k_sund, tau_sund, theta_sund, ordem=20)
+
+    # ETAPA 3 – Simulação das respostas dos modelos identificados
+    t_sund, y_sund = ctrl.step_response(G_sund, T=Tempo)
+
+    t_smith, y_smith = ctrl.step_response(G, T=Tempo)
+    atraso_smith = np.searchsorted(Tempo, Tempo[0] + theta)
+    y_smith_atrasado = np.concatenate((np.zeros(atraso_smith), y_smith))[:len(Tempo)]
+
+    # ETAPA 4 – Comparações visuais dos mod3los
+    # Real vs Sundaresan
+    plt.figure(figsize=(10, 5))
+    plt.plot(Tempo, Saida, label='Saída Real', color='tab:blue')
+    plt.plot(t_sund, y_sund, '--', label='Modelo 1ª ordem - Sundaresan', color='tab:orange')
+    plt.title('Comparação da resposta: Real vs Modelo de Sundaresan')
+    plt.xlabel('Tempo [s]')
+    plt.ylabel('Saída')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    # Smith vs Sundaresan
+    plt.figure(figsize=(10, 5))
+    plt.plot(Tempo, Saida, label='Saída Real', color='tab:blue')
+    plt.plot(Tempo, y_smith_atrasado, '--', label='Modelo Smith - Padé', color='tab:green')
+    plt.plot(t_sund, y_sund, '--', label='Modelo Sundaresan - Padé', color='tab:red')
+    plt.title("Comparação dos modelos: Smith vs Sundaresan")
+    plt.xlabel("Tempo [s]")
+    plt.ylabel("Saída")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    # ETAPA 5 – Comparações adicionais
     comparar_modelo_saida(Tempo, Saida, G, theta)
-
     comparar_pade_vs_padding(k, tau, theta)
-
     comparar_pade_ordens(k, tau, theta)
 
-
-    # Visualizar dados
-    # plot_entrada_saida(Tempo, Entrada, Saida)
-    
-    # Sintonia CHR
+    # ETAPA 6 – Sintonias PID
     Kp_chr, Ti_chr, Td_chr = sintonia_pid_chr_sobressinal(k, tau, theta)
     t_chr, y_chr = simular_pid(Tempo, G, theta, Kp_chr, Ti_chr, Td_chr)
 
-    # Sintonia Cohen-Coon
     Kp_cc, Ti_cc, Td_cc = sintonia_pid_cohen_coon(k, tau, theta)
     t_cc, y_cc = simular_pid(Tempo, G, theta, Kp_cc, Ti_cc, Td_cc)
 
-    # Plot comparativo PID
+    # ETAPA 7 – Resposta com controladores PID (??)
+    plt.figure()
     plt.plot(t_chr, y_chr, label='CHR com sobrevalor')
     plt.plot(t_cc, y_cc, label='Cohen-Coon', linestyle='--')
-    plt.plot(Tempo, Saida / np.max(Saida), label='Saída real', alpha=0.5)
+    plt.plot(Tempo, Saida, label='Saída real', alpha=0.5)
     plt.title("Resposta do Sistema com Controladores PID")
     plt.xlabel("Tempo")
     plt.ylabel("Saída")
@@ -300,11 +329,11 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-    # Avaliação
-    print("\n📊 Avaliação CHR:")
+    # ETAPA 8 – Avaliação de overshoot e tempo de acomodação
+    print("\n Avaliação CHR:")
     avaliar_desempenho(t_chr, y_chr)
 
-    print("\n📊 Avaliação Cohen-Coon:")
+    print("\n Avaliação Cohen-Coon:")
     avaliar_desempenho(t_cc, y_cc)
 
 
@@ -332,18 +361,3 @@ plt.plot(Tempo, Entrada, label='Entrada')
 plt.plot(Tempo, Saida, label='Saída')
 plt.show()
 print(Tempo)'''
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
