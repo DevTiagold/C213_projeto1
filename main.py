@@ -12,16 +12,6 @@ def load_dados(filename):
     Tempo, Entrada, Saida, QuantidadeFisica, Unidades = data
     return Tempo[0], Entrada[0], Saida[0], QuantidadeFisica[0], Unidades[0]
 
-def plot_entrada_saida(Tempo, Entrada, Saida):
-    plt.plot(Tempo, Entrada, label='Entrada')
-    plt.plot(Tempo, Saida, label='Saída')
-    plt.title('Entrada vs Saída')
-    plt.xlabel('Tempo [s]')
-    plt.ylabel('Amplitude')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-
 def plot_entrada_saida_aprimorada(tempo, entrada, saida):
     plt.figure(figsize=(10, 5))
     plt.plot(tempo, entrada, label='Entrada')
@@ -31,29 +21,39 @@ def plot_entrada_saida_aprimorada(tempo, entrada, saida):
     plt.ylabel('Amplitude')
     plt.grid(True)
     plt.legend()
-    plt.xlim(0, 2500)  # mais q o tempo disponível do dataset
+    plt.xlim(0, 30000)  # mais q o tempo disponível do dataset
     plt.tight_layout()
     plt.show()
 
 def identificar_planta_smith(tempo, entrada, saida):
-    entrada_inicial = np.mean(entrada[:10])
-    entrada_final = np.mean(entrada[-10:])
-    saida_inicial = np.mean(saida[:10])
-    saida_final = np.mean(saida[-10:])
+    # Patamar inicial e final
+    entrada_inicial = np.min(entrada)
+    entrada_final = np.max(entrada)
+    saida_inicial = np.min(saida)
+    saida_final = np.max(saida)
 
     delta_entrada = entrada_final - entrada_inicial
     delta_saida = saida_final - saida_inicial
+
+    if delta_saida == 0 or delta_entrada == 0:
+        raise ValueError("A variação de entrada ou saída é zero. Verifique se o sistema respondeu ao degrau.")
+
+    # Ganho estático
     k = delta_saida / delta_entrada
 
-    saida_normalizada = (saida - saida_inicial) / delta_saida
+    # Valores correspondentes a 28.3% e 63.2% da resposta máxima
+    y_283 = saida_inicial + 0.283 * delta_saida
+    y_632 = saida_inicial + 0.632 * delta_saida
 
-    # 28.3% e 63.2% são pontos padrões do método de Smith
-    y_283 = 0.283
-    y_632 = 0.632
+    # Verificar se y_283 e y_632 estão dentro do intervalo da saída
+    if not (saida_inicial <= y_283 <= saida_final) or not (saida_inicial <= y_632 <= saida_final):
+        raise ValueError("Os níveis de 28.3% ou 63.2% estão fora do intervalo da saída. A resposta pode não ter chegado ao patamar.")
 
-    t1 = tempo[np.where(saida_normalizada >= y_283)[0][0]]
-    t2 = tempo[np.where(saida_normalizada >= y_632)[0][0]]
+    # Interpola os tempos correspondentes aos pontos de 28.3% e 63.2%
+    t1 = np.interp(y_283, saida, tempo)
+    t2 = np.interp(y_632, saida, tempo)
 
+    # Cálculo da constante de tempo e atraso (Smith)
     tau = 1.5 * (t2 - t1)
     theta = t1 - 0.3 * tau
 
@@ -63,6 +63,7 @@ def identificar_planta_smith(tempo, entrada, saida):
     print(f"Atraso (theta): {theta:.2f} s")
 
     return k, tau, theta
+
 
 def identificar_planta_sundaresan(tempo, entrada, saida):
     entrada_inicial = np.mean(entrada[:10])
@@ -164,32 +165,53 @@ def comparar_pade_ordens(k, tau, theta, tempo_max=4000):
     plt.show()
 
 
-# Comparação 
+# Comparação dos modelos de saída
 def comparar_modelo_saida(tempo, saida_real, G, theta):
     t_sim, y_sim = ctrl.step_response(G, T=tempo)
 
-    # Aplicar o atraso --->> theta na resposta simulada
-    atraso_segundos = theta  # segundos
-    atraso_amostras = np.searchsorted(tempo, tempo[0] + atraso_segundos)
-
-    # criar vetor deslocado
+    atraso_amostras = np.searchsorted(tempo, tempo[0] + theta)
     y_sim_atrasado = np.concatenate((np.zeros(atraso_amostras), y_sim))[:len(tempo)]
 
-    # plocar gráfico
-    plt.figure(figsize=(10,5))
-    plt.plot(tempo, saida_real / np.max(saida_real), label='Saída Real (normalizada)')
-    plt.plot(tempo, y_sim_atrasado, '--', label=f'Modelo 1ª ordem (Smith)')
-    plt.xlabel('Tempo [s]')
-    plt.ylabel('Saída (normalizada)')
+    # Patamar inicial e final
+    saida_inicial = np.min(saida_real)
+    saida_final = np.max(saida_real)
+    delta_saida = saida_final - saida_inicial
+
+    # Cálculo dos pontos de 28.3% e 63.2% da resposta
+    y_283 = saida_inicial + 0.283 * delta_saida
+    y_632 = saida_inicial + 0.632 * delta_saida
+
+    # Interpola os tempos correspondentes a esses valores
+    t1 = np.interp(y_283, saida_real, tempo)
+    t2 = np.interp(y_632, saida_real, tempo)
+
+    # Gráfico
+    plt.figure(figsize=(10, 5))
+    plt.plot(tempo, saida_real, label='Saída Real', color='tab:blue')
+    plt.plot(tempo, y_sim_atrasado, '--', label='Modelo 1ª ordem (Smith)', color='tab:orange')
+
+    # Destaques visuais
+    plt.axhline(y_283, color='green', linestyle=':', label='28.3% da resposta')
+    plt.axhline(y_632, color='purple', linestyle=':', label='63.2% da resposta')
+    plt.axvline(t1, color='green', linestyle='--')
+    plt.axvline(t2, color='purple', linestyle='--')
+
+    plt.text(t1, y_283 + 10, f"t1 ≈ {t1:.0f}s", color='green')
+    plt.text(t2, y_632 + 10, f"t2 ≈ {t2:.0f}s", color='purple')
+
     plt.title('Comparação da resposta: Real vs Modelo de Smith')
+    plt.xlabel('Tempo [s]')
+    plt.ylabel('Saída')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
     plt.show()
 
-    # erro
-    erro = np.mean(np.abs((saida_real / np.max(saida_real)) - y_sim_atrasado))
-    print(f"\n Erro médio entre o modelo e a saída real: {erro:.4f}")
+    # Erro médio
+    erro = np.mean(np.abs(saida_real - y_sim_atrasado))
+    print(f"\nErro médio entre o modelo e a saída real: {erro:.4f}")
+
+
 
 # Sintonizar PID 
 # CHR com Sobressinal e Cohen-Coon
