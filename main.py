@@ -10,9 +10,11 @@ def load_dados(filename):
     data = loadmat(filename)
     data = data.get(whosmat(filename)[0][0])[0][0]
     Tempo, Entrada, Saida, QuantidadeFisica, Unidades = data
-    return Tempo[0], Entrada[0], Saida[0], QuantidadeFisica[0], Unidades[0]
+    #pegando o valor medio da entrada
+    return Tempo[0], Entrada[0], Saida[0], QuantidadeFisica[0], Unidades[0], 
 
-def plot_entrada_saida(tempo, entrada, saida):
+
+def plot_entrada_saida(tempo, entrada, saida):   
     plt.figure(figsize=(10, 5))
     plt.plot(tempo, entrada, label='Entrada')
     plt.plot(tempo, saida, label='Saída', linestyle='--')
@@ -27,20 +29,21 @@ def plot_entrada_saida(tempo, entrada, saida):
 
 def identificar_planta_smith(tempo, entrada, saida):
     
-    entrada_inicial = np.min(entrada)
-    entrada_final = np.max(entrada)
+    #entrada_inicial = np.min(entrada)
+   # entrada_final = np.max(entrada)
     saida_inicial = np.min(saida)
     saida_final = np.max(saida)
-
-    delta_entrada = entrada_final - entrada_inicial
+    
+    delta_entrada = entrada.mean()
+    #print(f"delta_entrada: {delta_entrada}")
     delta_saida = saida_final - saida_inicial
-
+    
     if delta_saida == 0 or delta_entrada == 0:
         raise ValueError("A variação de entrada ou saída é zero. Verifique se o sistema respondeu ao degrau.")
 
     # Ganho estático
-    k = delta_saida / delta_entrada
-
+    k = (saida_final - saida_inicial) / delta_entrada
+    #print(f"Ganho (k): {k:.4f}")
     # Valores correspondentes a 28.3% e 63.2% da resposta máxima
     y_283 = saida_inicial + 0.283 * delta_saida
     y_632 = saida_inicial + 0.632 * delta_saida
@@ -73,7 +76,8 @@ def identificar_planta_sundaresan(tempo, entrada, saida):
 
     delta_entrada = entrada_final - entrada_inicial
     delta_saida = saida_final - saida_inicial
-    k = delta_saida / delta_entrada
+    k = delta_saida / entrada.mean()
+    #print(f"Ganho (k): {k:.4f}")
 
     saida_norm = (saida - saida_inicial) / delta_saida
 
@@ -114,7 +118,7 @@ def comparar_pade_vs_padding(k, tau, theta, tempo_max=4000):
 
     # Atraso via padding --> zero 
     G_padding = ctrl.tf([k], [tau, 1])
-    t_padding, y_padding = ctrl.step_response(G_padding, T)
+    t_padding, y_padding = ctrl.step_response(G_padding * amp_degrau, T)
     atraso_samples = np.searchsorted(T, theta)
     y_padding_atrasado = np.concatenate((np.zeros(atraso_samples), y_padding))[:len(T)]
 
@@ -178,8 +182,8 @@ def comparar_modelo_saida(tempo, saida_real, G, theta):
     delta_saida = saida_final - saida_inicial
 
     # Cálculo dos pontos de 28.3% e 63.2% da resposta
-    y_283 = saida_inicial + 0.283 * delta_saida
-    y_632 = saida_inicial + 0.632 * delta_saida
+    y_283 = saida_inicial + (0.283 * delta_saida)
+    y_632 = saida_inicial + (0.632 * delta_saida)
 
     # Interpola os tempos correspondentes a esses valores
     t1 = np.interp(y_283, saida_real, tempo)
@@ -261,6 +265,7 @@ if __name__ == "__main__":
 
     # ETAPA 1 – Carregar e visualizar os dados
     Tempo, Entrada, Saida, QuantidadeFisica, Unidades = load_dados('Dataset_Grupo3.mat')
+    amp_degrau = Entrada.mean()
     Tempo = Tempo.astype(float)
     plot_entrada_saida(Tempo, Entrada, Saida)
 
@@ -269,12 +274,12 @@ if __name__ == "__main__":
     G, theta = obter_funcao_transferencia(k, tau, theta)
 
     k_sund, tau_sund, theta_sund = identificar_planta_sundaresan(Tempo, Entrada, Saida)
-    G_sund = obter_funcao_transferencia_pade(k_sund, tau_sund, theta_sund, ordem=20)
+    G_sund = obter_funcao_transferencia_pade(k_sund, tau_sund, theta_sund, ordem=1)
 
     # ETAPA 3 – Simulação das respostas dos modelos identificados
-    t_sund, y_sund = ctrl.step_response(G_sund, T=Tempo)
+    t_sund, y_sund = ctrl.step_response(G_sund*amp_degrau, T=Tempo)
 
-    t_smith, y_smith = ctrl.step_response(G, T=Tempo)
+    t_smith, y_smith = ctrl.step_response(G*amp_degrau, T=Tempo)
     atraso_smith = np.searchsorted(Tempo, Tempo[0] + theta)
     y_smith_atrasado = np.concatenate((np.zeros(atraso_smith), y_smith))[:len(Tempo)]
 

@@ -15,4 +15,23 @@ Demonstrar o fluxo completo de um projeto de ciência de dados e automação:
 7. Implementar um controlador PID
 8. Finalizar com uma interface gráfica
 
+VAlores a serem encontrados :
+para smith:
+k = 4.86
+Tau = 3285
+theta= 1480
+erro = 1.23
+
+para sundaresan
+k = 4.86
+tau = 3233
+Theta = 1542.7
+Erro = 1.81
+
+corrigir erros de normalização(ddscer o gráfico de saída para 0)
+
+
+
+
+
 
