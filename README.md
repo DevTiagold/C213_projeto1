@@ -29,10 +29,3 @@ Theta = 1542.7
 Erro = 1.81
 
 corrigir erros de normalização(ddscer o gráfico de saída para 0)
-
-
-
-
-
-
-D

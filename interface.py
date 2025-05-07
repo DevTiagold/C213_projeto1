@@ -13,7 +13,7 @@ def load_dados(filename):
     Tempo, Entrada, Saida, QuantidadeFisica, Unidades = data
     return Tempo[0], Entrada[0], Saida[0], QuantidadeFisica[0], Unidades[0]
 
-# Interface principal de visualização de dados e identificação
+# Interface principal
 class App:
     def __init__(self, root):
         self.root = root
@@ -26,12 +26,12 @@ class App:
         tk.Button(root, text="Identificação Sundaresan", command=self.plot_identificacao_sundaresan).pack(pady=5)
         tk.Button(root, text="Abrir Simulação PID", command=self.abrir_pid_interface).pack(pady=5)
 
-        # Área para o gráfico
         self.fig, self.ax = plt.subplots(figsize=(6, 4))
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         self.canvas.get_tk_widget().pack(padx=10, pady=10)
 
         self.tempo = self.entrada = self.saida = None
+        self.k_id = self.tau_id = self.theta_id = None  # parâmetros identificados
 
     def carregar_dados(self):
         path = filedialog.askopenfilename(filetypes=[("Arquivos .mat", "*.mat")])
@@ -57,22 +57,32 @@ class App:
     def plot_identificacao_smith(self):
         if self.tempo is None:
             return
-        saida_ini = np.min(self.saida)
-        saida_fim = np.max(self.saida)
+        saida_ini = self.saida[0]
+        saida_fim = self.saida[-1]
         delta_saida = saida_fim - saida_ini
+        
         delta_entrada = self.entrada.mean()
-        k = delta_saida / delta_entrada
-        y283 = saida_ini + 0.283 * delta_saida
-        y632 = saida_ini + 0.632 * delta_saida
-        t1 = np.interp(y283, self.saida, self.tempo)
-        t2 = np.interp(y632, self.saida, self.tempo)
+        k = (saida_fim  - self.saida[0]) / delta_entrada
+        
+        y1 = saida_ini + 0.283 * delta_saida
+        y2 = saida_ini + 0.632 * delta_saida
+
+        if not (saida_ini <= y1 <= saida_fim) or not (saida_ini <= y2 <= saida_fim):
+            raise ValueError("Níveis de 28.3% ou 63.2% fora do intervalo da saída. A resposta pode não ter estabilizado.")
+        
+        t1 = self.tempo[np.where(self.saida >= y1)[0][0]]
+        t2 = self.tempo[np.where(self.saida >= y2)[0][0]]
+        
         tau = 1.5 * (t2 - t1)
-        theta = t1 - 0.3 * tau
+        theta = t2 - tau
+
+        # salvar parâmetros identificados
+        self.k_id, self.tau_id, self.theta_id = k, tau, theta
 
         self.ax.clear()
         self.ax.plot(self.tempo, self.saida, label="Saída real")
-        self.ax.axhline(y=y283, color="green", linestyle="--", label="28.3%")
-        self.ax.axhline(y=y632, color="purple", linestyle="--", label="63.2%")
+        self.ax.axhline(y=y1, color="green", linestyle="--", label="28.3%")
+        self.ax.axhline(y=y2, color="purple", linestyle="--", label="63.2%")
         self.ax.axvline(x=t1, color="green")
         self.ax.axvline(x=t2, color="purple")
         self.ax.set_title(f"Identificação via Smith (K={k:.2f}, Tau={tau:.2f}, Theta={theta:.2f})")
@@ -100,6 +110,9 @@ class App:
         tau = 0.67 * (t2 - t1)
         theta = 1.3 * t1 - 0.29 * t2
 
+        # salvar parâmetros identificados
+        self.k_id, self.tau_id, self.theta_id = k, tau, theta
+
         self.ax.clear()
         self.ax.plot(self.tempo, self.saida, label="Saída real")
         self.ax.axvline(t1, color='red', linestyle='--', label="t1 (35.3%)")
@@ -113,11 +126,11 @@ class App:
 
     def abrir_pid_interface(self):
         nova_janela = tk.Toplevel(self.root)
-        PIDInterfaceGrupo3(nova_janela)
+        PIDInterfaceGrupo3(nova_janela, self.k_id, self.tau_id, self.theta_id)
 
-# Interface para simulação PID
+# Interface PID
 class PIDInterfaceGrupo3:
-    def __init__(self, root):
+    def __init__(self, root, k=None, tau=None, theta=None):
         self.root = root
         self.root.title("Controle PID - Projeto C213 Grupo 3")
 
@@ -158,6 +171,11 @@ class PIDInterfaceGrupo3:
         self.fig, self.ax = plt.subplots(figsize=(5, 3))
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
         self.canvas.get_tk_widget().pack()
+
+        self.k_default = k if k is not None else 5006.78
+        self.tau_default = tau if tau is not None else 3315
+        self.theta_default = theta if theta is not None else 1580.5
+
         self.atualizar_campos()
 
     def atualizar_campos(self, event=None):
@@ -168,9 +186,9 @@ class PIDInterfaceGrupo3:
         }
         for key in ["Kp", "Ti", "Td", "SetPoint"]:
             self.vars[key][0].set(str(presets[metodo][key]))
-        self.vars["K"][0].set("5006.78")
-        self.vars["Tau"][0].set("3315")
-        self.vars["Theta"][0].set("1580.5")
+        self.vars["K"][0].set(str(self.k_default))
+        self.vars["Tau"][0].set(str(self.tau_default))
+        self.vars["Theta"][0].set(str(self.theta_default))
 
     def simular(self):
         try:
@@ -195,7 +213,7 @@ class PIDInterfaceGrupo3:
         atraso_amostras = np.searchsorted(T, theta)
         y_atrasada = np.concatenate((np.zeros(atraso_amostras), y_sim))[:len(T)]
         y_out = y_atrasada * SP
-        
+
         self.ax.clear()
         self.ax.plot(T, y_out, label=f"{self.metodo.get()} (K={k}, τ={tau}, θ={theta})")
         self.ax.axhline(SP, color='gray', linestyle='--', label='Setpoint')
