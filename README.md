@@ -35,3 +35,4 @@ corrigir erros de normalização(ddscer o gráfico de saída para 0)
 
 
 
+D

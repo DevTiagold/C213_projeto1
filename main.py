@@ -11,7 +11,7 @@ def load_dados(filename):
     data = data.get(whosmat(filename)[0][0])[0][0]
     Tempo, Entrada, Saida, QuantidadeFisica, Unidades = data
     #pegando o valor medio da entrada
-    return Tempo[0], Entrada[0], Saida[0], QuantidadeFisica[0], Unidades[0], 
+    return Tempo[0], Entrada[0], Saida[0], QuantidadeFisica[0], Unidades[0]
 
 
 def plot_entrada_saida(tempo, entrada, saida):   
@@ -31,19 +31,19 @@ def identificar_planta_smith(tempo, entrada, saida):
     
     #entrada_inicial = np.min(entrada)
    # entrada_final = np.max(entrada)
-    saida_inicial = np.min(saida)
-    saida_final = np.max(saida)
-    
+    saida_inicial = saida[0]   # Primeiro valor
+    saida_final = saida[-1]       # Último valor
+    print(saida_final)
     delta_entrada = entrada.mean()
     #print(f"delta_entrada: {delta_entrada}")
     delta_saida = saida_final - saida_inicial
-    
+    print(f"delta_saida: {delta_saida}")    
     if delta_saida == 0 or delta_entrada == 0:
         raise ValueError("A variação de entrada ou saída é zero. Verifique se o sistema respondeu ao degrau.")
 
     # Ganho estático
     k = (saida_final - saida_inicial) / delta_entrada
-    #print(f"Ganho (k): {k:.4f}")
+    print(f"Ganho (k): {k:.4f}")
     # Valores correspondentes a 28.3% e 63.2% da resposta máxima
     y_283 = saida_inicial + 0.283 * delta_saida
     y_632 = saida_inicial + 0.632 * delta_saida
@@ -76,7 +76,9 @@ def identificar_planta_sundaresan(tempo, entrada, saida):
 
     delta_entrada = entrada_final - entrada_inicial
     delta_saida = saida_final - saida_inicial
+    
     k = delta_saida / entrada.mean()
+    
     #print(f"Ganho (k): {k:.4f}")
 
     saida_norm = (saida - saida_inicial) / delta_saida
@@ -215,8 +217,6 @@ def comparar_modelo_saida(tempo, saida_real, G, theta):
     erro = np.mean(np.abs(saida_real - y_sim_atrasado))
     print(f"\nErro médio entre o modelo e a saída real: {erro:.4f}")
 
-
-
 # Sintonizar PID 
 # CHR com Sobrevalor e Cohen-Coon
 
@@ -340,29 +340,70 @@ if __name__ == "__main__":
 
     print("\n Avaliação Cohen-Coon:")
     avaliar_desempenho(t_cc, y_cc)
+"""
+def identificar_planta(tempo, entrada, saida, metodo='smith'):
 
+    Identifica os parâmetros da planta (ganho, constante de tempo, atraso) usando
+    o método especificado: 'smith' ou 'sundaresan'.
 
-'''
-CÓDIGO INICIAL - TIAGO
+    Parâmetros:
+        tempo   : array de tempo
+        entrada : sinal de entrada
+        saida   : sinal de saída
+        metodo  : 'smith' ou 'sundaresan'
 
-from scipy.io import loadmat, whosmat
-import numpy as np
-import matplotlib.pyplot as plt
+    Retorna:
+        k       : ganho estático
+        tau     : constante de tempo
+        theta   : atraso (tempo morto)
+    
 
-# Load do Dataset_Grupo3.mat no diretório atual
-# O arquivo deve estar no mesmo diretório que este script ou você deve fornecer o caminho completo para o arquivo4
+    entrada_inicial = np.mean(entrada[:10])
+    entrada_final = np.mean(entrada[-10:])
+    saida_inicial = np.mean(saida[:10])
+    saida_final = np.mean(saida[-10:])
+    
+    delta_entrada = entrada.mean() if metodo == 'smith' else (entrada_final - entrada_inicial)
+    delta_saida = saida_final - saida_inicial
 
-data = loadmat('Dataset_Grupo3.mat')
-data = data.get(whosmat('Dataset_Grupo3.mat')[0][0])[0][0]
+    if delta_saida == 0 or delta_entrada == 0:
+        raise ValueError("A variação de entrada ou saída é zero. Verifique se o sistema respondeu ao degrau.")
 
-Tempo, Entrada, Saida, QuantidadeFisica, Unidades = data
-Tempo = Tempo[0]
-Entrada = Entrada[0]
-Saida = Saida[0]
-QuantidadeFisica = QuantidadeFisica[0]
-Unidades = Unidades[0]
+    k = delta_saida / delta_entrada
 
-plt.plot(Tempo, Entrada, label='Entrada')
-plt.plot(Tempo, Saida, label='Saída')
-plt.show()
-print(Tempo)'''
+    if metodo.lower() == 'smith':
+        y_283 = saida_inicial + 0.283 * delta_saida
+        y_632 = saida_inicial + 0.632 * delta_saida
+
+        if not (saida_inicial <= y_283 <= saida_final) or not (saida_inicial <= y_632 <= saida_final):
+            raise ValueError("Níveis de 28.3% ou 63.2% fora do intervalo da saída. A resposta pode não ter estabilizado.")
+
+        t1 = np.interp(y_283, saida, tempo)
+        t2 = np.interp(y_632, saida, tempo)
+
+        tau = 1.5 * (t2 - t1)
+        theta = t1 - 0.3 * tau
+
+        print(f"\nIdentificação via Método de Smith:")
+    
+    elif metodo.lower() == 'sundaresan':
+        saida_norm = (saida - saida_inicial) / delta_saida
+        y1, y2 = 0.353, 0.853
+
+        t1 = tempo[np.where(saida_norm >= y1)[0][0]]
+        t2 = tempo[np.where(saida_norm >= y2)[0][0]]
+
+        tau = 0.67 * (t2 - t1)
+        theta = 1.3 * t1 - 0.29 * t2
+
+        print(f"\nIdentificação via Método de Sundaresan:")
+    
+    else:
+        raise ValueError("Método inválido. Escolha 'smith' ou 'sundaresan'.")
+
+    print(f"Ganho (k): {k:.4f}")
+    print(f"Constante de tempo (tau): {tau:.2f} s")
+    print(f"Atraso (theta): {theta:.2f} s")
+
+    return k, tau, theta
+"""

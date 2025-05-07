@@ -195,15 +195,17 @@ class PIDInterfaceGrupo3:
         atraso_amostras = np.searchsorted(T, theta)
         y_atrasada = np.concatenate((np.zeros(atraso_amostras), y_sim))[:len(T)]
         y_out = y_atrasada * SP
-
+        
         self.ax.clear()
         self.ax.plot(T, y_out, label=f"{self.metodo.get()} (K={k}, τ={tau}, θ={theta})")
+        self.ax.axhline(SP, color='gray', linestyle='--', label='Setpoint')
         self.ax.set_title("Resposta do Sistema com PID")
         self.ax.set_xlabel("Tempo [s]")
         self.ax.set_ylabel("Saída")
         self.ax.grid(True)
         self.ax.legend()
         self.canvas.draw()
+
 
 if __name__ == "__main__":
     root = tk.Tk()
