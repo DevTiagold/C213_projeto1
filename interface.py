@@ -101,8 +101,8 @@ class App:
         saida_fim = self.saida[-1]
         delta_saida = saida_fim - saida_ini
         delta_entrada = self.entrada.mean()
-        k = (saida_fim - saida_ini) / delta_entrada
-
+        k = delta_saida / delta_entrada
+        
         y1 = saida_ini + 0.283 * delta_saida
         y2 = saida_ini + 0.632 * delta_saida
 
@@ -134,13 +134,16 @@ class App:
     def plot_identificacao_sundaresan(self):
         if self.tempo is None:
             return
-        entrada_i = np.mean(self.entrada[:10])
-        entrada_f = np.mean(self.entrada[-10:])
-        saida_i = np.mean(self.saida[:10])
-        saida_f = np.mean(self.saida[-10:])
-        delta_saida = saida_f - saida_i
-        k = delta_saida / self.entrada.mean()
-        saida_norm = (self.saida - saida_i) / delta_saida
+        #entrada_i = np.mean(self.entrada[:10])
+        #entrada_f = np.mean(self.entrada[-10:])
+        saida_ini = np.mean(self.saida[:10])
+        saida_fim = np.mean(self.saida[-10:])
+        delta_entrada = self.entrada.mean()
+        delta_saida = saida_fim - saida_ini
+        
+        k = delta_saida/ delta_entrada
+        #k = delta_saida / self.entrada.mean()
+        saida_norm = (self.saida - saida_ini) / delta_saida
 
         y1, y2 = 0.353, 0.853
         t1 = self.tempo[np.where(saida_norm >= y1)[0][0]]

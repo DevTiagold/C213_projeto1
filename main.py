@@ -13,7 +13,6 @@ def load_dados(filename):
     #pegando o valor medio da entrada
     return Tempo[0], Entrada[0], Saida[0], QuantidadeFisica[0], Unidades[0]
 
-
 def plot_entrada_saida(tempo, entrada, saida):   
     plt.figure(figsize=(10, 5))
     plt.plot(tempo, entrada, label='Entrada')
@@ -27,23 +26,24 @@ def plot_entrada_saida(tempo, entrada, saida):
     plt.tight_layout()
     plt.show()
 
-def identificar_planta_smith(tempo, entrada, saida):
+"""def identificar_planta_smith(tempo, entrada, saida):
     
     #entrada_inicial = np.min(entrada)
    # entrada_final = np.max(entrada)
-    saida_inicial = saida[0]   # Primeiro valor
+    saida_inicial = 0 # Primeiro valor
     saida_final = saida[-1]       # Último valor
     print(saida_final)
     delta_entrada = entrada.mean()
+    
     #print(f"delta_entrada: {delta_entrada}")
     delta_saida = saida_final - saida_inicial
+ 
     print(f"delta_saida: {delta_saida}")    
     if delta_saida == 0 or delta_entrada == 0:
         raise ValueError("A variação de entrada ou saída é zero. Verifique se o sistema respondeu ao degrau.")
 
     # Ganho estático
-    k = (saida_final - saida_inicial) / delta_entrada
-
+    k = delta_saida / delta_entrada
     print(f"Ganho (k): {k:.4f}")
     # Valores correspondentes a 28.3% e 63.2% da resposta máxima
     y_283 = saida_inicial + 0.283 * delta_saida
@@ -99,7 +99,7 @@ def identificar_planta_sundaresan(tempo, entrada, saida):
     print(f"Atraso (theta): {theta:.2f} s")
 
     return k, tau, theta
-
+"""
 
 def obter_funcao_transferencia_pade(k, tau, theta, ordem=20):
     G_sem_atraso = ctrl.tf([k], [tau, 1])
@@ -109,12 +109,61 @@ def obter_funcao_transferencia_pade(k, tau, theta, ordem=20):
     return G_pade
 
 
+def identificar_planta(tempo, entrada, saida, metodo=''):
+    
+    saida_inicial = saida[0]
+    saida_final = saida[-1]       # Último valo
+    delta_entrada = entrada.mean() #if metodo == 'smith' else (entrada_final - entrada_inicial) # amplitude do degrau
+    delta_saida = saida_final - saida_inicial
+
+    if delta_saida == 0 or delta_entrada == 0:
+        raise ValueError("A variação de entrada ou saída é zero. Verifique se o sistema respondeu ao degrau.")
+
+    k = (saida_final - saida[0]) / delta_entrada
+
+    if metodo.lower() == 'smith':
+        y1 = saida_inicial + 0.283 * delta_saida
+        y2 = saida_inicial + 0.632 * delta_saida
+
+        if not (saida_inicial <= y1 <= saida_final) or not (saida_inicial <= y2 <= saida_final):
+            raise ValueError("Níveis de 28.3% ou 63.2% fora do intervalo da saída. A resposta pode não ter estabilizado.")
+        
+        t1 = tempo[np.where(saida >= y1)[0][0]]
+        t2 = tempo[np.where(saida >= y2)[0][0]]
+        
+        tau = 1.5 * (t2 - t1)
+        theta = t2 - tau
+
+        print(f"\nIdentificação via Método de Smith:")
+    
+    elif metodo.lower() == 'sundaresan':
+       #saida_norm = (saida - saida_inicial) / delta_saida
+        y1 = 0.353 * saida_final
+        y2 = 0.853 * saida_final
+
+        t1 = tempo[np.where(saida >= y1)[0][0]]
+        t2 = tempo[np.where(saida >= y2)[0][0]]
+
+        tau = (2/3) * (t2 - t1)
+        theta = (1.3 * t1) - (0.29 * t2)
+
+        print(f"\nIdentificação via Método de Sundaresan:")
+    
+    else:
+        raise ValueError("Método inválido. Escolha 'smith' ou 'sundaresan'.")
+
+    print(f"Ganho (k): {k:.4f}")
+    print(f"Constante de tempo (tau): {tau:.2f} s")
+    print(f"Atraso (theta): {theta:.2f} s")
+
+    return k, tau, theta
+
+
 # Modelar TF
 def obter_funcao_transferencia(k, tau, theta):
     #G = ctrl.tf([k], [tau, 1]) # sem pade
     G = obter_funcao_transferencia_pade(k, tau, theta, ordem=20)
     return G, theta
-
 
 def comparar_pade_vs_padding(k, tau, theta, tempo_max=4000):
     T = np.linspace(0, tempo_max, 1000)
@@ -171,9 +220,17 @@ def comparar_pade_ordens(k, tau, theta, tempo_max=4000):
     plt.tight_layout()
     plt.show()
 
-
+def modelo_identificado(k, tau, theta):
+    # Função de transferência do sistema de primeira ordem: G(s) = k / (tau * s + 1)
+    G_s = ctrl.tf([k], [tau, 1])
+    H_s = ctrl.feedback(G_s, 1)
+    # Aproximação de Pade para o atraso
+    num_pade, den_pade = ctrl.pade(theta, 5)  # Aproximação de ordem 5
+    Pade_approx = ctrl.tf(num_pade, den_pade)
+    # Função de transferência com atraso
+    return ctrl.series(H_s, Pade_approx)
 # Comparação dos modelos de saída
-def comparar_modelo_saida(tempo, saida_real, G, theta):
+def comparar_modelo_saida(tempo, saida_real, G, theta,entrada):
     t_sim, y_sim = ctrl.step_response(G, T=tempo)
 
     atraso_amostras = np.searchsorted(tempo, tempo[0] + theta)
@@ -214,9 +271,15 @@ def comparar_modelo_saida(tempo, saida_real, G, theta):
     plt.tight_layout()
     plt.show()
 
+        # 6. Calcular a resposta estimada usando o modelo
+    resposta_modelo = modelo_identificado(k, tau, theta)
+    amp_degrau = entrada.mean()
+    # 7. Simular a resposta ao degrau do modelo identificado
+    t_sim, y_modelo = ctrl.step_response(resposta_modelo*amp_degrau, T=tempo)
     # Erro médio
-    erro = np.mean(np.abs(saida_real - y_sim_atrasado))
-    print(f"\nErro médio entre o modelo e a saída real: {erro:.4f}")
+    EQM = np.sqrt(np.sum((y_modelo - entrada) ** 2) / len(saida_real))
+    #erro = np.mean(np.abs(saida_real - y_sim_atrasado))
+    print(f"\nErro médio entre o modelo e a saída real: {EQM:.4f}")
 
 # Sintonizar PID 
 # CHR com Sobrevalor e Cohen-Coon
@@ -271,24 +334,27 @@ if __name__ == "__main__":
     plot_entrada_saida(Tempo, Entrada, Saida)
 
     # ETAPA 2 – Identificação da planta
-    k, tau, theta = identificar_planta_smith(Tempo, Entrada, Saida)
+
+
+    k, tau, theta = identificar_planta(Tempo, Entrada, Saida, metodo='smith')
     G, theta = obter_funcao_transferencia(k, tau, theta)
 
-    k_sund, tau_sund, theta_sund = identificar_planta_sundaresan(Tempo, Entrada, Saida)
-    G_sund = obter_funcao_transferencia_pade(k_sund, tau_sund, theta_sund, ordem=1)
+    #k_sund, tau_sund, theta_sund = identificar_planta_sundaresan(Tempo, Entrada, Saida)
+    #G_sund = obter_funcao_transferencia_pade(k_sund, tau_sund, theta_sund, ordem=1)
 
     # ETAPA 3 – Simulação das respostas dos modelos identificados
-    t_sund, y_sund = ctrl.step_response(G_sund*amp_degrau, T=Tempo)
+    t, y = ctrl.step_response(G*amp_degrau, T=Tempo)
 
     t_smith, y_smith = ctrl.step_response(G*amp_degrau, T=Tempo)
     atraso_smith = np.searchsorted(Tempo, Tempo[0] + theta)
+    
     y_smith_atrasado = np.concatenate((np.zeros(atraso_smith), y_smith))[:len(Tempo)]
 
     # ETAPA 4 – Comparações visuais dos mod3los
-    # Real vs Sundaresan
+    # Real vs metodo
     plt.figure(figsize=(10, 5))
     plt.plot(Tempo, Saida, label='Saída Real', color='tab:blue')
-    plt.plot(t_sund, y_sund, '--', label='Modelo 1ª ordem - Sundaresan', color='tab:orange')
+    plt.plot(t, y, '--', label='Modelo 1ª ordem - Sundaresan', color='tab:orange')
     plt.title('Comparação da resposta: Real vs Modelo de Sundaresan')
     plt.xlabel('Tempo [s]')
     plt.ylabel('Saída')
@@ -297,7 +363,7 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-    # Smith vs Sundaresan
+    """# Smith vs Sundaresan
     plt.figure(figsize=(10, 5))
     plt.plot(Tempo, Saida, label='Saída Real', color='tab:blue')
     plt.plot(Tempo, y_smith_atrasado, '--', label='Modelo Smith - Padé', color='tab:green')
@@ -308,10 +374,10 @@ if __name__ == "__main__":
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+    plt.show()"""
 
     # ETAPA 5 – Comparações adicionais
-    comparar_modelo_saida(Tempo, Saida, G, theta)
+    comparar_modelo_saida(Tempo, Saida, G, theta, Entrada)
     comparar_pade_vs_padding(k, tau, theta)
     comparar_pade_ordens(k, tau, theta)
 
@@ -341,70 +407,3 @@ if __name__ == "__main__":
 
     print("\n Avaliação Cohen-Coon:")
     avaliar_desempenho(t_cc, y_cc)
-"""
-def identificar_planta(tempo, entrada, saida, metodo='smith'):
-
-    Identifica os parâmetros da planta (ganho, constante de tempo, atraso) usando
-    o método especificado: 'smith' ou 'sundaresan'.
-
-    Parâmetros:
-        tempo   : array de tempo
-        entrada : sinal de entrada
-        saida   : sinal de saída
-        metodo  : 'smith' ou 'sundaresan'
-
-    Retorna:
-        k       : ganho estático
-        tau     : constante de tempo
-        theta   : atraso (tempo morto)
-    
-
-    entrada_inicial = np.mean(entrada[:10])
-    entrada_final = np.mean(entrada[-10:])
-    saida_inicial = np.mean(saida[:10])
-    saida_final = np.mean(saida[-10:])
-    
-    delta_entrada = entrada.mean() if metodo == 'smith' else (entrada_final - entrada_inicial)
-    delta_saida = saida_final - saida_inicial
-
-    if delta_saida == 0 or delta_entrada == 0:
-        raise ValueError("A variação de entrada ou saída é zero. Verifique se o sistema respondeu ao degrau.")
-
-    k = delta_saida / delta_entrada
-
-    if metodo.lower() == 'smith':
-        y_283 = saida_inicial + 0.283 * delta_saida
-        y_632 = saida_inicial + 0.632 * delta_saida
-
-        if not (saida_inicial <= y_283 <= saida_final) or not (saida_inicial <= y_632 <= saida_final):
-            raise ValueError("Níveis de 28.3% ou 63.2% fora do intervalo da saída. A resposta pode não ter estabilizado.")
-
-        t1 = np.interp(y_283, saida, tempo)
-        t2 = np.interp(y_632, saida, tempo)
-
-        tau = 1.5 * (t2 - t1)
-        theta = t1 - 0.3 * tau
-
-        print(f"\nIdentificação via Método de Smith:")
-    
-    elif metodo.lower() == 'sundaresan':
-        saida_norm = (saida - saida_inicial) / delta_saida
-        y1, y2 = 0.353, 0.853
-
-        t1 = tempo[np.where(saida_norm >= y1)[0][0]]
-        t2 = tempo[np.where(saida_norm >= y2)[0][0]]
-
-        tau = 0.67 * (t2 - t1)
-        theta = 1.3 * t1 - 0.29 * t2
-
-        print(f"\nIdentificação via Método de Sundaresan:")
-    
-    else:
-        raise ValueError("Método inválido. Escolha 'smith' ou 'sundaresan'.")
-
-    print(f"Ganho (k): {k:.4f}")
-    print(f"Constante de tempo (tau): {tau:.2f} s")
-    print(f"Atraso (theta): {theta:.2f} s")
-
-    return k, tau, theta
-"""
